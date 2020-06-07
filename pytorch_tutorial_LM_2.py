@@ -19,13 +19,13 @@ grad_clip = 5.0
 
 #准备数据
 text = torchtext.data.Field(lower=True)
-train, val, test = torchtext.datasets.LanguageModelingDataset.splits(path='',
+train, test = torchtext.datasets.LanguageModelingDataset.splits(path='',
                                                                      train='text8.train.txt',
-                                                                     validation='text8.dev.txt',
+
                                                                      test='text8.test.txt', text_field=text)
 
-train_loader, val_loader, test_loader = torchtext.data.BPTTIterator.splits(
-    (train, val, test), batch_size=batch_size, device=device, bptt_len=50, repeat=False, shuffle=True
+train_loader, test_loader = torchtext.data.BPTTIterator.splits(
+    (train, test), batch_size=batch_size, device=device, bptt_len=50, repeat=False, shuffle=True
 )
 text.build_vocab(train, max_size=max_vocab_size)
 train_len = len(text.vocab)
@@ -103,53 +103,12 @@ def evaluate(model, data):
         return loss
 
 
-#训练阶段
-val_losses = []
-for epoch in range(num_epochs):
-    model.train()
-    train_loader = iter(train_loader)
-    hidden = model.init_hidden(batch_size)
-    for i, batch in enumerate(train_loader):
-        inputs = batch.text
-        targets = batch.target
-        inputs = inputs.to(device)
-        targets = targets.to(device)
-        hidden = repackage_hidden(hidden)
-
-        outputs, hidden = model(inputs, hidden)
-        loss = criterion(outputs, targets.view(-1))
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-
-#第100个batch的损失
-        if (i+1) % 100 == 0:
-            print('epoch:{}, iteration:{}, train_loss：{}'.format(epoch+1, i+1, loss.item()))
-
-        if (i+1) % 1000 == 0 and i != 0:
-            val_loss = evaluate(model, val_loader)
-            print('epoch:{}, iteration:{}, test_loss：{}'.format(epoch + 1, i+1, val_loss))
-            if len(val_losses) == 0 or val_loss < min(val_losses):
-                torch.save(model.state_dict(), 'LM.ckpt')
-            else:
-                scheduler.step()
-            val_losses.append(val_loss)
-        # val_loss = evaluate(model, val_loader)
-        # print('epoch:{}, iteration:{}, loss'.format(epoch + 1, i+1, val_loss))
-        # if len(val_loss) == 0 or val_loss < min(val_losses):
-        #     torch.save(model.state_dict(), 'LM.ckpt')
-        # else:
-        #     scheduler.step()
-        # val_losses.append(val_loss)
-
 
 best_model = RNNModel(hidden_size=hidden_size, embedding_size=embedding_size, vocab_size=len(text.vocab))
 
-best_model.load_state_dict(torch.load('LM.ckpt'))
-test_loss = evaluate(best_model, test_loader)
-print('perplexity:', np.exp(test_loss))
+best_model.load_state_dict(torch.load('LM.ckpt', map_location=torch.device('cpu')))
+# test_loss = evaluate(best_model, test_loader)
+# print('perplexity:', np.exp(test_loss))
 
 hidden = best_model.init_hidden(1)
 inputs = torch.randint(len(text.vocab), (1, 1), dtype=torch.long)
@@ -161,6 +120,7 @@ for i in range(100):
     inputs.fill_(word_idx)
     word = text.vocab.itos[word_idx]
     words.append(word)
+    print(word)
 print(' '.join(words))
 
 
